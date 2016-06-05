@@ -23,6 +23,7 @@ const init = function (controller) {
     Promise.all(promises.map((promise) => promise.reflect())).then((results) => {
       bot.botkit.log('got promises to check', results.length);
       let result = '';
+      results.reverse()
       for (let i = 0; i <= results.length - 1; i++) {
         const inspection = results[i];
         let title;
