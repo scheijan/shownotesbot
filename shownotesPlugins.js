@@ -3,6 +3,7 @@ const request = require('request');
 const cheerio = require('cheerio');
 const Promise = require('bluebird');
 Promise.promisifyAll(require('request'));
+const datejs = require('date.js');
 
 const getErrorMessage = (channelName) =>
   `Ummm... Sorry, but that did not work as expected... Did I maybe read that wrong? Which channel did you mean? I read "${channelName}", but my eyes aren't what they used to be... :eyeglasses:`;
@@ -93,40 +94,54 @@ const init = function (controller) {
   }
 
   // collect pinned items with links from a channel and create shownotes from the result
-  function pins2osf(bot, message, channel, pins) {
+  function pins2osf(bot, message, channel, pins, since) {
     const urls = [];
     const promises = [];
     // loop over all pins and fill an array with promises of get requests to the urls
     for (let i = 0; i <= pins.length - 1; i++) {
       const e = pins[i];
       if (e.type && e.type === 'message') {
-        const text = e.message.text;
-        if (text.indexOf('<') > -1 && text.indexOf('>') > -1 && text.indexOf('.') > -1) {
-          //  extract the url from the message
-          const re = new RegExp('\\<([^\\<\\>]+\\.+[^\\<\\>]+)\\>');
-          let url = text.match(re);
-          if (url && url.length > 0) {
-            url = url[1]
-            if (url.indexOf('|') > -1) {
-              url = url.split('|')[0]
+        // we usually don't want all pins
+        const tsDate = new Date(parseFloat(e.message.ts) * 1000)
+        const ts = tsDate.getTime()
+        let startDate;
+        // if a start date was given, use that
+        if (since) {
+          startDate = datejs(since).getTime()
+        // otherwise assume we want the last 24h
+        } else {
+          startDate = new Date().getTime() - (24 * 60 * 60)
+        }
+        if (ts > startDate) {
+          const text = e.message.text;
+          if (text.indexOf('<') > -1 && text.indexOf('>') > -1 && text.indexOf('.') > -1) {
+            //  extract the url from the message
+            const re = new RegExp('\\<([^\\<\\>]+\\.+[^\\<\\>]+)\\>');
+            let url = text.match(re);
+            if (url && url.length > 0) {
+              url = url[1]
+              if (url.indexOf('|') > -1) {
+                url = url.split('|')[0]
+              }
+              // push the url to an array
+              urls.push(url);
+              // request will return a promise, add that to another array
+              // set simple = false to prevent rejections of the promise for ... reasons
+              promises.push(request.getAsync({ uri: url, simple: true, timeout: 10000 }));
             }
-            // push the url to an array
-            urls.push(url);
-            // request will return a promise, add that to another array
-            // set simple = false to prevent rejections of the promise for ... reasons
-            promises.push(request.getAsync({ uri: url, simple: true, timeout: 10000 }));
           }
         }
       }
     }
 
     bot.botkit.log('got URLs to check', urls.length);
-
-    promises2shownotes(bot, message, urls, promises, channel, 'pinned items')
+    if (urls.length > 0) {
+      promises2shownotes(bot, message, urls, promises, channel, 'pinned items')
+    }
   }
 
   // generate shownotes from saved links and pinned items for a given channel
-  function shownotes(bot, message, channelName) {
+  function shownotes(bot, message, channelName, since) {
     bot.botkit.log('creating shownotes for channel', channelName);
     bot.reply(message, `Please hold on just a second while I try to generate the shownotes for ${channelName}`)
     const channelID = cleanChannelID(channelName)
@@ -152,7 +167,7 @@ const init = function (controller) {
         const pinsLength = res.items.length;
         // bot.botkit.log('found ' + pinsLength + ' pins in ' + channelID);
         if (pinsLength > 0) {
-          pins2osf(bot, message, channel, res.items);
+          pins2osf(bot, message, channel, res.items, since);
         } else {
           bot.reply(message, `I'm sorry, but I can't find any pinned items for ${channelName}`);
         }
@@ -161,6 +176,13 @@ const init = function (controller) {
       }
     })
   }
+
+  // command to generate shownotes
+  controller.hears(['shownotes (.*) since (.*)'], 'direct_message,direct_mention,mention', (bot, message) => {
+    const channelName = message.match[1];
+    const since = message.match[2];
+    shownotes(bot, message, channelName, since);
+  });
 
   // command to generate shownotes
   controller.hears(['shownotes (.*)'], 'direct_message,direct_mention,mention', (bot, message) => {
