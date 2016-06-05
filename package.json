@@ -1,8 +1,8 @@
 {
-  "name": "slackwarrior",
+  "name": "shownotes",
   "version": "0.0.1",
-  "description": "Slackbot for working with taskwarrior and inthe.am",
-  "main": "slackwarrior.js",
+  "description": "Slackbot to help with shownotes for podcasts",
+  "main": "shownotes.js",
   "scripts": {
     "test": "test"
   },
