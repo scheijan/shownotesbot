@@ -138,7 +138,7 @@ const init = function (controller) {
         bot.botkit.log('getting channel failed', err, channel);
         bot.reply(message, getErrorMessage(channelName));
       } else {
-        if (channel.links && channel.links.length > 0) {
+        if (resChannel.links && resChannel.links.length > 0) {
           urls2osf(bot, message, resChannel)
         } else {
           bot.reply(message, `I'm sorry, but I can't find any saved links for ${channelName}`);
