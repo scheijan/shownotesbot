@@ -94,7 +94,7 @@ const init = function (controller) {
   }
 
   // collect pinned items with links from a channel and create shownotes from the result
-  function pins2osf(bot, message, channel, pins, since) {
+  function pins2osf(bot, message, channel, pins, since, channelName) {
     const urls = [];
     const promises = [];
     // loop over all pins and fill an array with promises of get requests to the urls
@@ -107,7 +107,13 @@ const init = function (controller) {
         let startDate;
         // if a start date was given, use that
         if (since) {
-          startDate = datejs(since).getTime()
+          // try to convert the given date to a js Date object
+          startDate = new Date(since).getTime()
+          // if that didn't work, try again with datejs
+          if (String(startDate) === 'NaN') {
+            startDate = datejs(since).getTime()
+          }
+
         // otherwise assume we want the last 24h
         } else {
           startDate = new Date().getTime() - (24 * 60 * 60)
@@ -137,6 +143,8 @@ const init = function (controller) {
     bot.botkit.log('got URLs to check', urls.length);
     if (urls.length > 0) {
       promises2shownotes(bot, message, urls, promises, channel, 'pinned items')
+    } else {
+      bot.reply(message, `I'm sorry, but I can't find any pinned items for ${channelName}`);
     }
   }
 
@@ -167,7 +175,7 @@ const init = function (controller) {
         const pinsLength = res.items.length;
         // bot.botkit.log('found ' + pinsLength + ' pins in ' + channelID);
         if (pinsLength > 0) {
-          pins2osf(bot, message, channel, res.items, since);
+          pins2osf(bot, message, channel, res.items, since, channelName);
         } else {
           bot.reply(message, `I'm sorry, but I can't find any pinned items for ${channelName}`);
         }
