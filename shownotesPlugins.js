@@ -24,6 +24,7 @@ const init = function (controller) {
       bot.botkit.log('got promises to check', results.length);
       let result = '';
       results.reverse()
+      urls.reverse()
       for (let i = 0; i <= results.length - 1; i++) {
         const inspection = results[i];
         let title;
