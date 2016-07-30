@@ -62,6 +62,7 @@ const init = function (controller) {
         result = result + line;
       }
       if (result !== '') {
+        result = `HEADER\n/HEADER\n\n${result}`
         // upload the result as a snipped to the channel the bot was asked in
         const d = new Date();
         const date = d.toLocaleString();
