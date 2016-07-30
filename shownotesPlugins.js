@@ -19,11 +19,15 @@ const init = function (controller) {
   }
 
   // resolve a list of promises and create shownotes from the result
-  function promises2shownotes(bot, message, urls, promises, channel, mode) {
+  function promises2shownotes(bot, message, orgurls, promises, channel) {
     Promise.all(promises.map((promise) => promise.reflect())).then((results) => {
       bot.botkit.log('got promises to check', results.length);
       let result = '';
-      results.reverse()
+
+      const urls = []
+      for (let i = orgurls.length - 1; i >= 0; i--) {
+        urls.push(orgurls[i].url)
+      }
       urls.reverse()
       for (let i = 0; i <= results.length - 1; i++) {
         const inspection = results[i];
@@ -57,100 +61,68 @@ const init = function (controller) {
         // bot.botkit.log('adding line', line);
         result = result + line;
       }
-
-      // upload the result as a snipped to the channel the bot was asked in
-      const d = new Date();
-      const date = d.toLocaleString();
-      bot.api.files.upload({
-        content: result,
-        channels: message.channel,
-        title: `Shownotes from ${mode} for #${channel.name} on ${date}`,
-      }, (err) => {
-        // bot.botkit.log('res', res);
-        if (err) {
-          bot.botkit.log('err', err);
-          bot.reply(message, 'There was some problem uploading the shownotes file, please contact @scheijan and kick his ass...')
-        } else {
-          // if (mode == 'pinned items')
-            // bot.reply(message, 'There you are, I hope this helps :robot_face:')
-        }
-      })
+      if (result !== '') {
+        // upload the result as a snipped to the channel the bot was asked in
+        const d = new Date();
+        const date = d.toLocaleString();
+        bot.api.files.upload({
+          content: result,
+          channels: message.channel,
+          title: `Shownotes for #${channel.name} on ${date}`,
+        }, (err) => {
+          // bot.botkit.log('res', res);
+          if (err) {
+            bot.botkit.log('err', err);
+            bot.reply(message, 'There was some problem uploading the shownotes file, please contact @scheijan...')
+          }
+        })
+      } else {
+        bot.reply(message, 'I didn\'t find titles :confused:')
+      }
     }).catch((err) => {
       bot.botkit.log('promise error', err);
-      bot.reply(message, 'There was some problem getting the titles for the shownotes, please contact @scheijan and kick his ass...')
+      bot.reply(message, 'There was some problem getting the titles for the shownotes, please contact @scheijan...')
     })
   }
 
   // collect saved links from a channel and create an array of promises
-  function urls2osf(bot, message, channel) {
+  function urls2osf(bot, message, channel, since) {
     const urls = channel.links;
     const promises = [];
-    // loop over all pins and fill an array with promises of get requests to the urls
-    for (let i = 0; i <= urls.length - 1; i++) {
-      promises.push(request.getAsync({ uri: urls[i], simple: false, timeout: 10000 }));
-    }
 
-    bot.botkit.log('got URLs to check', urls.length);
-
-    promises2shownotes(bot, message, urls, promises, channel, 'pasted links')
-  }
-
-  // collect pinned items with links from a channel and create shownotes from the result
-  function pins2osf(bot, message, channel, pins, since, channelName) {
-    const urls = [];
-    const promises = [];
-    // loop over all pins and fill an array with promises of get requests to the urls
-    for (let i = 0; i <= pins.length - 1; i++) {
-      const e = pins[i];
-      if (e.type && e.type === 'message') {
-        // we usually don't want all pins
-        const tsDate = new Date(parseFloat(e.message.ts) * 1000)
-        const ts = tsDate.getTime()
-        let startDate;
-        // if a start date was given, use that
-        if (since) {
-          // try to convert the given date to a js Date object
-          startDate = new Date(since).getTime()
-          // if that didn't work, try again with datejs
-          if (String(startDate) === 'NaN') {
-            startDate = datejs(since).getTime()
-          }
-
-        // otherwise assume we want the last 24h
-        } else {
-          startDate = new Date().getTime() - (24 * 60 * 60)
-        }
-        if (ts > startDate) {
-          const text = e.message.text;
-          if (text.indexOf('<') > -1 && text.indexOf('>') > -1 && text.indexOf('.') > -1) {
-            //  extract the url from the message
-            const re = new RegExp('\\<([^\\<\\>]+\\.+[^\\<\\>]+)\\>');
-            let url = text.match(re);
-            if (url && url.length > 0) {
-              url = url[1]
-              if (url.indexOf('|') > -1) {
-                url = url.split('|')[0]
-              }
-              // push the url to an array
-              urls.push(url);
-              // request will return a promise, add that to another array
-              // set simple = false to prevent rejections of the promise for ... reasons
-              promises.push(request.getAsync({ uri: url, simple: true, timeout: 10000 }));
-            }
-          }
-        }
+    // we usually don't want all pins, usually we return only links from within the last 24h
+    let startDate = new Date().getTime() - (24 * 60 * 60 * 1000);
+    // if a start date was given, use that
+    if (since) {
+      // try to convert the given date to a js Date object
+      startDate = new Date(since).getTime()
+      // if that didn't work, try again with datejs
+      if (String(startDate) === 'NaN') {
+        startDate = datejs(since).getTime()
       }
     }
 
-    bot.botkit.log('got URLs to check', urls.length);
-    if (urls.length > 0) {
-      promises2shownotes(bot, message, urls, promises, channel, 'pinned items')
+    // loop over all urls and fill an array with promises of get requests to the urls
+    for (let i = 0; i <= urls.length - 1; i++) {
+      const entry = urls[i]
+      const url = entry.url
+      const messageTS = entry.ts * 1000
+
+      if (parseFloat(messageTS) > parseFloat(startDate)) {
+        promises.push(request.getAsync({ uri: url, simple: false, timeout: 10000 }));
+      } else {
+        bot.botkit.log('zu alt', parseFloat(messageTS), parseFloat(startDate));
+      }
+    }
+
+    if (promises.length > 0) {
+      promises2shownotes(bot, message, urls, promises, channel, 'pasted links')
     } else {
-      bot.reply(message, `I'm sorry, but I can't find any pinned items for ${channelName}`);
+      bot.reply(message, `I was not able to find any shownotes for #${channel.name} since ${new Date(startDate)}`)
     }
   }
 
-  // generate shownotes from saved links and pinned items for a given channel
+  // generate shownotes from saved for a given channel
   function shownotes(bot, message, channelName, since) {
     bot.botkit.log('creating shownotes for channel', channelName);
     bot.reply(message, `Please hold on just a second while I try to generate the shownotes for ${channelName}`)
@@ -164,27 +136,12 @@ const init = function (controller) {
         bot.reply(message, getErrorMessage(channelName));
       } else {
         if (resChannel.links && resChannel.links.length > 0) {
-          urls2osf(bot, message, resChannel)
+          urls2osf(bot, message, resChannel, since)
         } else {
           bot.reply(message, `I'm sorry, but I can't find any saved links for ${channelName}`);
         }
       }
     });
-
-    // if there are pinned items in the channel also generate shownotes from those
-    bot.api.pins.list({ channel: channelID }, (err, res) => {
-      if (!err) {
-        const pinsLength = res.items.length;
-        // bot.botkit.log('found ' + pinsLength + ' pins in ' + channelID);
-        if (pinsLength > 0) {
-          pins2osf(bot, message, channel, res.items, since, channelName);
-        } else {
-          bot.reply(message, `I'm sorry, but I can't find any pinned items for ${channelName}`);
-        }
-      } else {
-        bot.botkit.log('pins failed', err);
-      }
-    })
   }
 
   // command to generate shownotes
@@ -218,7 +175,7 @@ const init = function (controller) {
           const shownote = `SHOWNOTE:${message.match[1]}`;
 
           // add the line to the saved links
-          channel.links.push(shownote);
+          channel.links.push({ url: shownote, ts: message.ts });
           bot.botkit.log('saved a shownote', shownote);
 
           // save the list of saved links back to storage
@@ -373,8 +330,15 @@ const init = function (controller) {
 
                 // add the link to the list of saved links
                 bot.botkit.log('working on link', url);
-                if (channel.links.indexOf(url) < 0) {
-                  channel.links.push(url);
+                let alreadySaved = false;
+                for (let j = channel.links.length - 1; j >= 0; j--) {
+                  const urlToCheck = channel.links[j].url;
+                  if (urlToCheck === url) {
+                    alreadySaved = true;
+                  }
+                }
+                if (!alreadySaved) {
+                  channel.links.push({ url, ts: message.ts });
                   bot.botkit.log('saved a link', url);
                 }
               }
